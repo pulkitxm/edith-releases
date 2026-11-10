@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Ask a question
+    url: https://github.com/pulkitxm/edith-releases/discussions
+    about: Questions, setups and ideas that are not ready to be a request.
+  - name: Report a vulnerability
+    url: https://github.com/pulkitxm/edith-releases/security/advisories/new
+    about: Report security problems privately, never in a public issue.

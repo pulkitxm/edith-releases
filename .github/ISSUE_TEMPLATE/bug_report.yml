@@ -1,0 +1,56 @@
+name: Bug report
+description: Something in Edith or one of its extensions is broken.
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: Search the open issues first. Remove names, paths, hosts, tokens and other private details from anything you paste.
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What you saw, and what you expected instead.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Open Agents
+        2. Switch to another page and back
+        3. Press Control-Tab
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Edith version
+      description: Edith menu, About Edith, or run `ed version`.
+      placeholder: 1.0.12
+    validations:
+      required: true
+  - type: input
+    id: extension
+    attributes:
+      label: Extension and version
+      description: Leave empty if it is not about one extension. `ed extensions ls` lists versions.
+      placeholder: Agents 1.0.16
+  - type: input
+    id: macos
+    attributes:
+      label: macOS version
+      placeholder: macOS 26.1
+    validations:
+      required: true
+  - type: textarea
+    id: diagnostics
+    attributes:
+      label: Diagnostics
+      description: Output of `ed app diagnostics --json`, or the relevant part of it.
+      render: json
+  - type: textarea
+    id: media
+    attributes:
+      label: Screenshots or recordings
+      description: Drag files here. Hide anything private first.

@@ -1,0 +1,29 @@
+name: Feature request
+description: Suggest a new extension or a change to Edith.
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What are you trying to do, and what gets in the way today?
+    validations:
+      required: true
+  - type: textarea
+    id: idea
+    attributes:
+      label: Idea
+      description: How you would like Edith to handle it.
+    validations:
+      required: true
+  - type: input
+    id: area
+    attributes:
+      label: Area
+      description: The extension or part of the app this is about, or "new extension".
+      placeholder: Agents
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives
+      description: Other tools or workarounds you use now.
