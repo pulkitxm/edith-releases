@@ -5,6 +5,8 @@ readonly bundle_identifier="com.pulkit.edith"
 readonly expected_team="PUWDA36B2R"
 readonly release_prefix="https://github.com/pulkitxm/edith-releases/releases/"
 readonly appcast_url="${release_prefix}latest/download/appcast.xml"
+readonly download_api_prefix="https://edith.pulkit.page/api/v1/download/"
+readonly release_download_pattern='^https://github\.com/pulkitxm/edith-releases/releases/download/[A-Za-z0-9._-]+/Edith\.dmg$'
 readonly support_root="$HOME/Library/Application Support/Edith"
 readonly backups_dir="$support_root/backups"
 readonly extensions_dir="$support_root/Extensions"
@@ -154,8 +156,23 @@ read_latest_release() {
   latest_build="$(grep -o '<sparkle:version>[^<]*' "$appcast" | head -n 1 | sed 's/.*>//' || true)"
   latest_dmg_url="$(grep -o '<enclosure [^>]*' "$appcast" | head -n 1 | grep -o 'url="[^"]*"' | sed 's/^url="//; s/"$//' || true)"
   [[ "$latest_version" =~ ^[0-9]+(\.[0-9]+)*$ ]] || fail "The release information looks incomplete. Try again in a few minutes."
-  [[ "$latest_dmg_url" == "$release_prefix"download/*/Edith.dmg ]] ||
+  latest_dmg_url="$(resolve_download_url "$latest_dmg_url")" ||
     fail "The release information points somewhere unexpected, so nothing was changed."
+}
+
+redirect_target() {
+  curl --fail --silent --show-error --head --proto '=https' --tlsv1.2 \
+    --retry 3 --retry-delay 2 --connect-timeout 20 --max-time 60 \
+    --output /dev/null --write-out '%{redirect_url}' "$1"
+}
+
+resolve_download_url() {
+  local url="$1"
+  if [[ "$url" == "$download_api_prefix"?* ]]; then
+    url="$(redirect_target "$url" 2>/dev/null)" || return 1
+  fi
+  [[ "$url" =~ $release_download_pattern ]] || return 1
+  printf '%s\n' "$url"
 }
 
 count_extensions() {
