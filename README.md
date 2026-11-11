@@ -13,6 +13,7 @@ is broken or what you want next.
 - Latest release: [Edith.dmg](https://github.com/pulkitxm/edith-releases/releases/latest/download/Edith.dmg)
 - Homebrew: `brew install --cask pulkitxm/tap/edith`
 - Website: [edith.pulkit.page](https://edith.pulkit.page)
+- On Edith 1.0.11 or earlier: `curl -fsSL https://raw.githubusercontent.com/pulkitxm/edith-releases/main/update.sh | bash`
 
 Edith updates itself. Extensions install and update from the Extensions page in
 the app.
