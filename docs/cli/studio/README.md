@@ -95,3 +95,5 @@ saves `report-compressed 2.pdf`.
 
 - [`ed tools`](../tools/README.md), for installing FFmpeg and qpdf
 - [All `ed` commands](../README.md)
+
+- [Audio marker regions](./audio-markers.md)
