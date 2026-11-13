@@ -9,7 +9,7 @@ Commands reach the matching app through its authenticated local command channel.
 Use the CLI inside a development app to control that build. The `ed` on your
 shell path normally reaches the installed application.
 
-`quit`, `relaunch`, and `clear-updates` preview their effect until `--yes` is
+`quit`, `relaunch`, `rollback`, and `clear-updates` preview their effect until `--yes` is
 present. JSON previews include `action`, `targets`, `applied`, `changed`, and
 `requiresConfirmation`.
 
@@ -24,13 +24,13 @@ present. JSON previews include `action`, `targets`, `applied`, `changed`, and
 | `ed app open-path <id>` | Open or reveal one listed path. |
 | `ed app open-link <id>` | Open one listed link. |
 | `ed app actions` | List actions and their current availability; also `ed app ls`. |
-| `ed app clean-keys` | Start keyboard cleaning through the System extension. |
 | `ed app test-notification` | Send the app's test notification. |
 | `ed app open` | Show the main window. |
 | `ed app quit` | Close app windows, or quit the whole app with `--completely`. |
 | `ed app check-updates` | Ask the app's updater to check for a release. |
 | `ed app updates` | Print recorded update checks. |
 | `ed app relaunch` | Restart this Edith installation. |
+| `ed app rollback` | Go back to the previous Edith version that worked. |
 | `ed app clear-updates` | Clear recorded update history. |
 | `ed app reveal` | Show a section and optional tab. |
 | `ed app route` | Print the current window route. |
@@ -48,13 +48,13 @@ present. JSON previews include `action`, `targets`, `applied`, `changed`, and
 - [`ed app open-path`](./open-path.md)
 - [`ed app open-link`](./open-link.md)
 - [`ed app actions`](./actions.md)
-- [`ed app clean-keys`](./clean-keys.md)
 - [`ed app test-notification`](./test-notification.md)
 - [`ed app open`](./open.md)
 - [`ed app quit`](./quit.md)
 - [`ed app check-updates`](./check-updates.md)
 - [`ed app updates`](./updates.md)
 - [`ed app relaunch`](./relaunch.md)
+- [`ed app rollback`](./rollback.md)
 - [`ed app clear-updates`](./clear-updates.md)
 - [`ed app reveal`](./reveal.md)
 - [`ed app route`](./route.md)

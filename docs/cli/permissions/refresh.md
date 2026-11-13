@@ -44,7 +44,7 @@ command cannot get this far with the app closed. Trimmed here to two rows:
       "usage",
       "machines"
     ],
-    "reason": "Asked when you enable usage limit, pacing, or reset alerts.",
+    "reason": "Asked when you turn on usage alerts or app update notifications.",
     "requiredBy": [],
     "usedByEnabledExtension": true
   }

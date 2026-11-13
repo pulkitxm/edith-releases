@@ -1,6 +1,6 @@
 # `ed app actions`
 
-Lists the seven one-shot actions with the process each one needs and whether
+Lists the six one-shot actions with the process each one needs and whether
 that process is running.
 
 ```
@@ -18,12 +18,6 @@ ed app actions [--json]
 
 ```json
 [
-  {
-    "action": "clean-keys",
-    "available": true,
-    "needs": "menuBar",
-    "summary": "Lock the keyboard so it can be wiped."
-  },
   {
     "action": "test-notification",
     "available": true,
@@ -65,7 +59,7 @@ ed app actions [--json]
 
 `needs` is `menuBar` or `mainApp`, never anything else. `available` is the live
 answer for that one process, so the four `mainApp` rows can be false while the
-three `menuBar` rows are true.
+two `menuBar` rows are true.
 
 Examples:
 
@@ -83,7 +77,6 @@ verb will work.
 ```
 $ ed app actions
 ACTION             NEEDS     STATE  WHAT
-clean-keys         menu bar  ready  Lock the keyboard so it can be wiped.
 test-notification  menu bar  ready  Send a test notification.
 open               menu bar  ready  Open the Edith panel.
 quit               main app  ready  Quit the Edith main window.

@@ -419,7 +419,7 @@ is a local question that needs no permission and no round trip.
 | Command | Needs | Why |
 | --- | --- | --- |
 | `ed app diagnostics` | menu bar | uptime and idle wakeups belong to the live helper process |
-| `ed app clean-keys`, `ed app test-notification`, `ed app open` | menu bar | the helper owns the panel, the keyboard lock and notifications |
+| `ed app test-notification`, `ed app open` | menu bar | the helper owns the panel and notifications |
 | `ed app quit --yes`, `ed app check-updates`, `ed app reveal`, `ed app route`, `ed app navigate`, `ed app back`, `ed app forward`, `ed app snapshot` | main window | these act on the window, and the updater lives in it; the quit preview needs no process. `route`, `navigate`, `back`, and `forward` change or read the selection without activating Edith or ordering a window forward |
 | `ed calendar ls` | menu bar | the calendar grant belongs to the Edith bundle, not to `ed` |
 | `ed permissions request`, `ed permissions refresh` | menu bar | only the bundle can raise a TCC prompt or re-read its own state |
@@ -459,7 +459,7 @@ can never drift on what a command means.
 Most messages are one-way: a config write posts `settingsChanged`, a machine
 change posts `machinesChanged`, a clipboard mutation posts `clipboardChanged`, a
 shelf edit posts `shelfChanged`, a download change posts `downloadQueueChanged`,
-and `ed app open`, `clean-keys` and `test-notification` post and return. Nothing
+and `ed app open` and `test-notification` post and return. Nothing
 is waited for, so these cost nothing when the app is closed.
 
 The rest are request and reply: `ed` registers an observer for the reply, posts

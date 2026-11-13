@@ -10,11 +10,16 @@ readonly release_download_pattern='^https://github\.com/pulkitxm/edith-releases/
 readonly support_root="$HOME/Library/Application Support/Edith"
 readonly backups_dir="$support_root/backups"
 readonly extensions_dir="$support_root/Extensions"
+readonly health_file="$support_root/update-health.json"
 readonly sandbox_dir="${EDITH_UPDATE_APP_DIR:-}"
 readonly launch_disabled="${EDITH_UPDATE_NO_LAUNCH:-0}"
+readonly health_timeout="${EDITH_UPDATE_HEALTH_TIMEOUT:-180}"
+readonly supervised_key="EDITH_UPDATE_SUPERVISED"
 
 dry_run=0
 assume_yes=0
+rollback=0
+health_problem=""
 work_dir=""
 mount_point=""
 use_sudo=0
@@ -41,15 +46,18 @@ Update Edith to the latest version.
 Usage:
   curl -fsSL https://edith.pulkit.page/update_app_to_latest.sh | bash
   curl -fsSL https://edith.pulkit.page/update_app_to_latest.sh | bash -s -- --yes
-  bash update.sh [--dry-run] [--yes]
+  bash update.sh [--dry-run] [--yes] [--rollback]
 
 Options:
   --dry-run   Show what would happen without changing anything.
   --yes       Answer yes to every question, for unattended runs.
+  --rollback  Go back to the most recent version that worked on this Mac.
   --help      Show this help.
 
 Your settings, data and extensions stay where they are. A copy of the
 previous app is kept in ~/Library/Application Support/Edith/backups.
+After updating, Edith is opened and checked. If it doesn't start
+correctly, the previous version is put back automatically.
 USAGE
 }
 
@@ -68,6 +76,7 @@ parse_arguments() {
     case "$1" in
       --dry-run) dry_run=1 ;;
       --yes | -y) assume_yes=1 ;;
+      --rollback) rollback=1 ;;
       --help | -h)
         usage
         exit 0
@@ -216,7 +225,7 @@ quit_app() {
   local app="$1" cli="$1/Contents/MacOS/ed"
   [[ -n "$(running_pids "$app")" ]] || return 0
   say "Closing Edith..."
-  if [[ -x "$cli" ]] && "$cli" app quit --help 2>/dev/null | grep -q -- '--completely'; then
+  if [[ -x "$cli" ]] && "$cli" app quit --help 2>/dev/null | grep -- '--completely' >/dev/null; then
     "$cli" app quit --yes --completely >/dev/null 2>&1 || true
   else
     osascript -e "quit app id \"$bundle_identifier\"" >/dev/null 2>&1 || true
@@ -259,7 +268,7 @@ launch_app() {
       quit_app "$app"
     fi
     if [[ -z "$(running_pids "$app")" ]]; then
-      open "$app" >/dev/null 2>&1 || true
+      open --env "$supervised_key=1" "$app" >/dev/null 2>&1 || true
     fi
     waited=0
     while ((waited < 15)); do
@@ -293,6 +302,155 @@ json_count() {
   local value
   value="$(plutil -extract "$2" raw -o - "$1" 2>/dev/null || true)"
   [[ "$value" =~ ^[0-9]+$ ]] && printf '%s\n' "$value" || printf '0\n'
+}
+
+run_bounded() {
+  local limit="$1" pid ticks=0
+  shift
+  "$@" &
+  pid=$!
+  while kill -0 "$pid" 2>/dev/null; do
+    if ((ticks >= limit * 10)); then
+      kill -TERM "$pid" 2>/dev/null || true
+      wait "$pid" 2>/dev/null || true
+      return 124
+    fi
+    sleep 0.1
+    ticks=$((ticks + 1))
+  done
+  wait "$pid"
+}
+
+json_strings() {
+  local value list=""
+  for value in "$@"; do
+    [[ "$value" =~ ^[0-9A-Za-z._-]+$ ]] || continue
+    list="${list:+$list,}\"$value\""
+  done
+  printf '[%s]\n' "$list"
+}
+
+health_record() {
+  mkdir -p "$support_root"
+  plutil -extract failedBuilds json -o - "$health_file" >/dev/null 2>&1 ||
+    printf '{"failedBuilds":[]}\n' >"$health_file"
+}
+
+health_value() {
+  plutil -extract "$1" raw -o - "$health_file" 2>/dev/null || true
+}
+
+failed_builds() {
+  local index=0 build
+  while build="$(plutil -extract "failedBuilds.$index" raw -o - "$health_file" 2>/dev/null)"; do
+    printf '%s\n' "$build"
+    index=$((index + 1))
+  done
+}
+
+build_failed() {
+  [[ -n "$1" ]] && failed_builds | grep -x -- "$1" >/dev/null
+}
+
+set_failed_builds() {
+  health_record
+  plutil -replace failedBuilds -json "$(json_strings "$@")" "$health_file" 2>/dev/null || true
+}
+
+other_failed_builds() {
+  local entry
+  while IFS= read -r entry; do
+    [[ -n "$entry" ]] && [[ "$entry" != "$1" ]] && printf '%s\n' "$entry"
+  done < <(failed_builds)
+}
+
+forget_failure() {
+  local kept=() entry
+  build_failed "$1" || return 0
+  while IFS= read -r entry; do kept+=("$entry"); done < <(other_failed_builds "$1")
+  set_failed_builds ${kept[@]+"${kept[@]}"}
+}
+
+mark_failed() {
+  local build="$1" kept=() entry skipped
+  [[ -n "$build" ]] || return 0
+  while IFS= read -r entry; do kept+=("$entry"); done < <(other_failed_builds "$build")
+  set_failed_builds ${kept[@]+"${kept[@]}"} "$build"
+  [[ "$(health_value healthyBuild)" == "$build" ]] && plutil -remove healthyBuild "$health_file" 2>/dev/null
+  skipped="$(defaults read "$bundle_identifier" SUSkippedVersion 2>/dev/null || true)"
+  if [[ -z "$skipped" ]] || ! version_at_least "$skipped" "$build"; then
+    defaults write "$bundle_identifier" SUSkippedVersion -string "$build" >/dev/null 2>&1 || true
+  fi
+}
+
+remember_usable_extensions() {
+  local app="$1" cli="$1/Contents/MacOS/ed" listing="$work_dir/before.json" index=0 id state usable=()
+  [[ -n "$(running_pids "$app")" ]] || return 0
+  run_bounded 20 "$cli" extensions ls --json >"$listing" 2>/dev/null || return 0
+  while id="$(plutil -extract "$index.id" raw -o - "$listing" 2>/dev/null)"; do
+    state="$(plutil -extract "$index.state" raw -o - "$listing" 2>/dev/null || true)"
+    if [[ "$(plutil -extract "$index.enabled" raw -o - "$listing" 2>/dev/null || true)" == true ]] &&
+      { [[ "$state" == active ]] || [[ "$state" == idle ]]; }; then
+      usable+=("$id")
+    fi
+    index=$((index + 1))
+  done
+  health_record
+  plutil -replace usableExtensions -json "$(json_strings ${usable[@]+"${usable[@]}"})" "$health_file" 2>/dev/null || true
+}
+
+failure_reason() {
+  local cli="$1/Contents/MacOS/ed" info="$work_dir/info.json" build="$2"
+  if run_bounded 10 "$cli" app info --json >"$info" 2>/dev/null &&
+    [[ "$(plutil -extract updateHealth.build raw -o - "$info" 2>/dev/null || true)" == "$build" ]]; then
+    plutil -extract updateHealth.reason raw -o - "$info" 2>/dev/null || true
+  fi
+}
+
+verify_health() {
+  local app="$1" build="$2" ticks=0 gone=0 reason
+  say "Checking that Edith and your extensions start..."
+  health_problem=""
+  while ((ticks < health_timeout)); do
+    if [[ "$(bundle_value "$app" CFBundleVersion)" != "$build" ]]; then
+      health_problem="Another version of Edith was put in its place while it was being checked"
+      return 1
+    fi
+    if build_failed "$build"; then
+      reason="$(failure_reason "$app" "$build")"
+      health_problem="${reason:-Edith stopped responding}"
+      return 1
+    fi
+    if running_current_binary "$app"; then
+      gone=0
+      [[ "$(health_value healthyBuild)" == "$build" ]] && return 0
+    else
+      gone=$((gone + 1))
+      health_problem="It closed right after opening"
+      ((gone < 10)) || return 1
+    fi
+    sleep 1
+    ticks=$((ticks + 1))
+  done
+  [[ -n "$health_problem" ]] || health_problem="Edith didn't finish starting"
+  return 1
+}
+
+good_backup() {
+  local exclude="$1" entry build best="" best_build=""
+  for entry in "$backups_dir"/Edith-*.app; do
+    [[ -d "$entry" ]] || continue
+    [[ "$(bundle_value "$entry" CFBundleIdentifier)" == "$bundle_identifier" ]] || continue
+    build="$(bundle_value "$entry" CFBundleVersion)"
+    [[ "$build" =~ ^[0-9]+$ ]] || continue
+    [[ "$build" == "$exclude" ]] && continue
+    build_failed "$build" && continue
+    if [[ -z "$best" ]] || ((10#$build > 10#$best_build)); then
+      best="$entry"
+      best_build="$build"
+    fi
+  done
+  [[ -n "$best" ]] && printf '%s\n' "$best"
 }
 
 json_keys() {
@@ -454,27 +612,30 @@ ensure_writable() {
 }
 
 backup_app() {
-  local app="$1" version="$2" backup entry
+  local app="$1" version="$2" backup
   backup="$backups_dir/Edith-$version.app"
   say "Saving a copy of Edith $version in ~/Library/Application Support/Edith/backups..."
   mkdir -p "$backups_dir"
   rm -rf "$backup.partial"
   ditto "$app" "$backup.partial" || fail "Couldn't save a copy of the current version, so nothing was changed."
-  for entry in "$backups_dir"/Edith-*.app; do
-    [[ -e "$entry" ]] && rm -rf "$entry"
-  done
+  rm -rf "$backup"
   mv "$backup.partial" "$backup"
   backup_path="$backup"
 }
 
 replace_app() {
-  local app="$1" install_dir staged retired
+  install_bundle "$1" "$work_dir/Edith.app" "$latest_version"
+  installed_version_is_latest "$1" || fail "The new version didn't install correctly. A copy of the previous version is in $backups_dir."
+}
+
+install_bundle() {
+  local app="$1" source="$2" version="$3" install_dir staged retired
   install_dir="$(dirname "$app")"
   staged="$install_dir/.Edith.app.updating"
   retired="$install_dir/.Edith.app.previous"
-  say "Installing Edith $latest_version..."
+  say "Installing Edith $version..."
   as_owner rm -rf "$staged" "$retired"
-  as_owner ditto "$work_dir/Edith.app" "$staged" || {
+  as_owner ditto "$source" "$staged" || {
     as_owner rm -rf "$staged"
     fail "Couldn't copy the new version into $install_dir, so nothing was changed."
   }
@@ -490,20 +651,98 @@ replace_app() {
     fail "Couldn't finish installing the new version. Your previous version is still in place."
   fi
   as_owner rm -rf "$retired"
-  installed_version_is_latest "$app" || fail "The new version didn't install correctly. A copy of the previous version is in $backups_dir."
 }
 
 finish_running() {
-  local app="$1" extension_count="$2"
+  local app="$1" extension_count="$2" build
   if [[ "$launch_disabled" == 1 ]]; then
     ((extension_count == 0)) || say "Your extensions will update the next time Edith opens."
     return 0
   fi
+  build="$(bundle_value "$app" CFBundleVersion)"
+  forget_failure "$build"
   say "Opening Edith..."
-  launch_app "$app" || fail "Edith $latest_version is installed, but it didn't open. Open it from your Applications folder."
+  if ! launch_app "$app"; then
+    health_problem="It didn't open"
+    restore_after_failure "$app" "$build"
+  fi
   if ((extension_count > 0)); then
     update_extensions "$app"
   fi
+  verify_health "$app" "$build" || restore_after_failure "$app" "$build"
+}
+
+restore_after_failure() {
+  local app="$1" build="$2" backup previous
+  say ""
+  say "Edith $latest_version didn't start correctly. $health_problem."
+  mark_failed "$build"
+  backup="$(good_backup "$build" || true)"
+  if [[ -z "$backup" ]]; then
+    fail "There's no earlier version on this Mac to go back to. Quit Edith and open it again, or run this again later when a newer version is out."
+  fi
+  previous="$(bundle_value "$backup" CFBundleShortVersionString)"
+  say "Going back to Edith $previous, the version that worked before..."
+  verify_backup "$backup" || fail "The saved copy of Edith $previous didn't pass its safety checks, so Edith $latest_version was left in place."
+  quit_app "$app"
+  install_bundle "$app" "$backup" "$previous"
+  launch_app "$app" || fail "Edith $previous is back in place, but it didn't open. Open it from your Applications folder."
+  say ""
+  say "Edith is back on $previous. Your settings, data and extensions are unchanged."
+  say "Edith won't install $latest_version again on its own. You'll get the next version when it's out."
+  exit 1
+}
+
+verify_backup() {
+  local app="$1" details assessment
+  [[ "$(bundle_value "$app" CFBundleIdentifier)" == "$bundle_identifier" ]] || return 1
+  codesign --verify --deep --strict "$app" >/dev/null 2>&1 || return 1
+  details="$(codesign -dv --verbose=2 "$app" 2>&1 || true)"
+  grep -qx "TeamIdentifier=$expected_team" <<<"$details" || return 1
+  assessment="$(spctl -a -vv -t exec "$app" 2>&1 || true)"
+  grep -q ': accepted' <<<"$assessment" || return 1
+  grep -q 'source=Notarized Developer ID' <<<"$assessment"
+}
+
+roll_back() {
+  local app="" current_version current_build backup previous install_dir
+  app="$(find_install)" || fail "Edith isn't installed on this Mac, so there's nothing to go back from."
+  [[ "$(bundle_value "$app" CFBundleIdentifier)" == "$bundle_identifier" ]] ||
+    fail "The app at $app isn't Edith, so it was left alone."
+  current_version="$(bundle_value "$app" CFBundleShortVersionString)"
+  current_build="$(bundle_value "$app" CFBundleVersion)"
+  backup="$(good_backup "$current_build" || true)"
+  [[ -n "$backup" ]] || fail "There's no earlier version of Edith saved on this Mac to go back to."
+  previous="$(bundle_value "$backup" CFBundleShortVersionString)"
+  say "Found Edith $current_version in $(dirname "$app")."
+  say "The most recent version that worked here is $previous."
+  install_dir="$(dirname "$app")"
+  ensure_writable "$install_dir" "$app"
+  if [[ "$dry_run" == 1 ]]; then
+    say ""
+    say "Here's what would happen:"
+    [[ "$launch_disabled" == 1 ]] || note "Close Edith."
+    note "Replace $app with Edith $previous from ~/Library/Application Support/Edith/backups."
+    note "Stop Edith $current_version from installing again on its own."
+    [[ "$launch_disabled" == 1 ]] || note "Open Edith."
+    say ""
+    say "This was a dry run, so nothing was changed."
+    exit 0
+  fi
+  say ""
+  confirm "Go back from Edith $current_version to $previous now?" || fail "Nothing was changed."
+  verify_backup "$backup" || fail "The saved copy of Edith $previous didn't pass its safety checks, so nothing was changed."
+  [[ "$launch_disabled" == 1 ]] || quit_app "$app"
+  install_bundle "$app" "$backup" "$previous"
+  mark_failed "$current_build"
+  if [[ "$launch_disabled" != 1 ]]; then
+    say "Opening Edith..."
+    launch_app "$app" || fail "Edith $previous is back in place, but it didn't open. Open it from your Applications folder."
+  fi
+  say ""
+  say "Edith is back on $previous. Your settings, data and extensions are unchanged."
+  say "Edith won't install $current_version again on its own. You'll get the next version when it's out."
+  exit 0
 }
 
 print_plan() {
@@ -525,6 +764,7 @@ print_plan() {
   if [[ "$launch_disabled" != 1 ]]; then
     note "Open Edith."
     ((extension_count > 0)) && note "Update your $extension_count extensions to their latest versions."
+    note "Check that Edith and your extensions start, and put the previous version back if they don't."
   fi
   note "Your settings, data and extensions stay where they are."
   say ""
@@ -537,6 +777,10 @@ main() {
   work_dir="$(mktemp -d "${TMPDIR:-/tmp}/edith-update.XXXXXX")"
   trap cleanup EXIT
   trap 'exit 130' INT TERM
+
+  if [[ "$rollback" == 1 ]]; then
+    roll_back
+  fi
 
   say "Checking for the latest version of Edith..."
   read_latest_release
@@ -587,6 +831,7 @@ main() {
   fi
 
   backup_path=""
+  [[ -n "$old_version" ]] && [[ "$launch_disabled" != 1 ]] && remember_usable_extensions "$app"
   if [[ "$via_brew" == 1 ]]; then
     [[ "$launch_disabled" == 1 ]] || quit_app "$app"
     backup_app "$app" "$old_version"

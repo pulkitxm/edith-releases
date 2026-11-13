@@ -76,6 +76,7 @@ report still exits 0, so read `verified`, `state.phase`, `state.runtimePhase`,
 | [`ed skills`](./skills/README.md) | The Edith skill library: preview, copy, and install into detected agents |
 | [`ed download`](./download/README.md) | The download queue and the tools that back it |
 | [`ed apps`](./apps/README.md) | Running applications, and quitting them |
+| [`ed keyboard`](./keyboard/README.md) | Locking the keyboard so you can clean the keys |
 | [`ed tools`](./tools/README.md) | The command line tools Edith can install for you |
 | [`ed shelf`](./shelf/README.md) | The notch shelf's staged files |
 | [`ed browser`](./browser/README.md) | The notch browser: tabs, navigation, Chrome profiles, and detach |
